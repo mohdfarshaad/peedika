@@ -7,7 +7,7 @@ export class ApiError extends Error {
     statusCode: number,
     message: string = "Something went wrong",
     error?: Error,
-    data: null | Record<string, any> = null
+    data: null | Record<string, any> = null,
   ) {
     super(message);
     this.statusCode = statusCode;

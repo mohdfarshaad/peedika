@@ -2,18 +2,53 @@ import { CookieOptions } from "express";
 import {
   clearRefreshToken,
   generateTokens,
+  getUserById,
   isExistingUser,
   isPasswordValid,
   refreshAccessToken,
-} from "../services/auth.services";
-import { createUser, getUser } from "../services/user.services";
-import { AuthRequest, ICreateUser } from "../types/user";
-import { ApiError } from "../utils/ApiError";
-import { ApiResponse } from "../utils/ApiResponse";
-import { asyncHandler } from "../utils/asyncHandler";
+  updateRefreshToken,
+  verifyAccessToken,
+} from "../services/auth.services.js";
+import { createUser, getUser } from "../services/user.services.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { AuthRequest } from "../types/user.js";
+import { UserRole } from "../generated/prisma/client.js";
+import { verify } from "crypto";
+
+const isProd = process.env.NODE_ENV === "production";
+
+const baseCookieOptions: CookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+  domain: isProd ? ".cohortorbit.zyverce.com" : undefined,
+};
+
+const cookieOptions = {
+  ...baseCookieOptions,
+  maxAge: 15 * 60 * 1000,
+};
+
+const refreshCookieOptions = {
+  ...baseCookieOptions,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
 
 export const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password }: ICreateUser = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+  }: {
+    name: string;
+    email: string;
+    password: string;
+    role: UserRole;
+  } = req.body;
 
   if (!(name && email && password)) {
     throw ApiError.badRequest();
@@ -25,21 +60,47 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw ApiError.conflict();
   }
 
-  const createdUser = await createUser({ name, email, password });
+  const defaultRole = role || UserRole.user;
+
+  const createdUser = await createUser({
+    name,
+    email,
+    password,
+    role: defaultRole,
+  });
 
   if (!createdUser) {
     throw ApiError.internal();
   }
 
-  const userCreated = await getUser({ email });
+  const userCreated = await getUser({
+    userId: createdUser.id,
+    email: createdUser.email,
+  });
 
   if (!userCreated) {
     throw ApiError.internal();
   }
 
+  const { accessToken, refreshToken } = await generateTokens(userCreated.id);
+
+  if (!accessToken && !refreshToken) {
+    throw ApiError.internal();
+  }
+
+  const data = {
+    user: userCreated,
+    tokens: {
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    },
+  };
+
   res
     .status(201)
-    .json(new ApiResponse(201, userCreated, "User registered successfully"));
+    .cookie("accessToken", accessToken, cookieOptions)
+    .cookie("refreshToken", refreshToken, refreshCookieOptions)
+    .json(new ApiResponse(201, data, "User registered successfully"));
 });
 
 export const loginUser = asyncHandler(async (req, res) => {
@@ -55,7 +116,7 @@ export const loginUser = asyncHandler(async (req, res) => {
     throw ApiError.unauthorized();
   }
 
-  const userId = isUserExists._id as string;
+  const userId = isUserExists.id;
 
   const checkPassword = await isPasswordValid(userId, password);
 
@@ -69,20 +130,49 @@ export const loginUser = asyncHandler(async (req, res) => {
     throw ApiError.internal();
   }
 
-  const options: CookieOptions = {
-    httpOnly: true,
-    secure: true,
+  await updateRefreshToken(userId, refreshToken);
+
+  const user = {
+    ...isUserExists,
+    token: {
+      accessToken,
+      refreshToken,
+    },
   };
 
   res
     .status(200)
-    .cookie("AccessToken", accessToken, options)
-    .cookie("RefreshToken", refreshToken, options)
-    .json(new ApiResponse(200, isUserExists, "User login successfully"));
+    .cookie("AccessToken", accessToken, cookieOptions)
+    .cookie("RefreshToken", refreshToken, refreshCookieOptions)
+    .json(new ApiResponse(200, user, "User login successfully"));
+});
+
+export const getMe = asyncHandler(async (req: AuthRequest, res) => {
+  const token = req.cookies.AccessToken;
+
+  if (!token) {
+    throw ApiError.unauthorized("No user found");
+  }
+
+  const validUser = verifyAccessToken(token);
+
+  if (!validUser) {
+    throw ApiError.unauthorized("No user found");
+  }
+
+  const userId = validUser._id;
+
+  const user = await getUserById(userId);
+
+  if (!user) {
+    throw ApiError.unauthorized("No user found");
+  }
+
+  res.status(200).json(new ApiResponse(200, user, "User fetched successfully"));
 });
 
 export const logoutUser = asyncHandler(async (req: AuthRequest, res) => {
-  const userId = req.user?._id;
+  const userId = req.user?.id;
 
   if (!userId) {
     throw ApiError.unauthorized();
@@ -94,45 +184,33 @@ export const logoutUser = asyncHandler(async (req: AuthRequest, res) => {
     throw ApiError.internal();
   }
 
-  const options: CookieOptions = {
-    httpOnly: true,
-    secure: true,
-  };
-
   res
     .status(200)
-    .clearCookie("AccessToken", options)
-    .clearCookie("RefreshToken", options)
+    .clearCookie("AccessToken", cookieOptions)
+    .clearCookie("RefreshToken", refreshCookieOptions)
     .json(new ApiResponse(200, userlogout, "User logged out"));
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {
-  const incomingRefreshToken = req.cookies.RefreshToken | req.body.RefreshToken;
-
-  console.log(incomingRefreshToken);
+  const incomingRefreshToken = req.cookies.RefreshToken;
 
   if (!incomingRefreshToken) {
     throw ApiError.unauthorized();
   }
 
   const { accessToken, refreshToken } = await refreshAccessToken(
-    incomingRefreshToken
+    String(incomingRefreshToken),
   );
-
-  const options = {
-    httpOnly: true,
-    secure: true,
-  };
 
   res
     .status(200)
-    .cookie("AccessToken", accessToken, options)
-    .cookie("RefreshToken", refreshToken, options)
+    .cookie("AccessToken", accessToken, baseCookieOptions)
+    .cookie("RefreshToken", refreshToken, refreshCookieOptions)
     .json(
       new ApiResponse(
         200,
         { accessToken, refreshToken },
-        "Access token refreshed"
-      )
+        "Access token refreshed",
+      ),
     );
 });

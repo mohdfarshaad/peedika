@@ -2,20 +2,15 @@ import { Request } from "express";
 import mongoose, { Document, ObjectId } from "mongoose";
 import { Product } from "./product";
 
-export interface User extends Document {
+export interface User {
   name: string;
   avatar?: string;
   email: string;
-  password: string;
+  hashedPassword: string;
   role: string = "admin" | "user";
   refreshToken?: string | undefined;
-  cart: [IProduct];
   createdAt?: Date;
   upatedAt?: Date;
-
-  isPasswordCorrect(password: string): Promise<boolean>;
-  generateAccessToken(): Promise<string>;
-  generateRefreshToken(): Promise<string>;
 }
 
 export interface AccessTokenPayload {

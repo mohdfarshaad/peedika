@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  user
+
+  @@map("user_role")
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+
+  @@map("product_status")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+
+  @@map("order_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+model User {
+  id Int @id @default(autoincrement())
+
+  name String @db.VarChar(255)
+
+  avatar String? @db.VarChar(500)
+
+  email String @unique @db.VarChar(255)
+
+  hashedPassword String @map("hashed_password") @db.VarChar(255)
+
+  role UserRole @default(user)
+
+  refreshToken String? @map("refresh_token") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("users")
+}
+
+model Category {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(150)
+
+  slug String @unique @db.VarChar(150)
+
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  products Product[]
+
+  @@index([slug], map: "categories_slug_idx")
+  @@map("categories")
+}
+
+
+model Product {
+  id String @id @default(uuid()) @db.Uuid
+
+  categoryId String? @map("category_id") @db.Uuid
+
+  name String @db.VarChar(200)
+
+  slug String @unique @db.VarChar(200)
+
+  description String?
+
+  // Money stored in smallest unit. (Paisa)
+  // ₹499.00 => 49900
+  // ₹99.50  => 9950
+  price Int
+
+  stock Int @default(0)
+
+  image String?
+
+  status ProductStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  category Category? @relation(  fields: [categoryId],  references: [id],  onDelete: SetNull)
+
+  orderItems OrderItem[]
+
+  @@index([categoryId], map: "products_category_id_idx")
+  @@index([status], map: "products_status_idx")
+  @@map("products")
+}
+
+model Customer {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(200)
+
+  email String? @db.VarChar(255)
+
+  phone String? @db.VarChar(30)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  addresses Address[]
+
+  orders Order[]
+
+  @@index([email], map: "customers_email_idx")
+  @@index([phone], map: "customers_phone_idx")
+  @@map("customers")
+}
+
+model Address {
+  id String @id @default(uuid()) @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  name String @db.VarChar(200)
+  phone String @db.VarChar(30)
+  addressLine1 String @map("address_line_1") @db.VarChar(255)
+  addressLine2 String? @map("address_line_2") @db.VarChar(255)
+  city String @db.VarChar(100)
+  state String @db.VarChar(100)
+  postalCode String @map("postal_code") @db.VarChar(20)
+  country String @default("India") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  customer Customer @relation( fields: [customerId],references: [id],onDelete: Cascade)
+
+  @@index([customerId], map: "addresses_customer_id_idx")
+  @@map("addresses")
+}
+
+
+model Order {
+  id String @id @default(uuid()) @db.Uuid
+
+  customerId String? @map("customer_id") @db.Uuid
+
+  orderNumber String @unique @map("order_number") @db.VarChar(50)
+
+  status OrderStatus @default(PENDING)
+
+  paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
+
+  subtotal Int
+
+  shippingAmount Int @default(0) @map("shipping_amount")
+
+  total Int
+
+  shippingAddress String? @map("shipping_address")
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  customer Customer? @relation(fields: [customerId],references: [id],onDelete: SetNull)
+
+  items OrderItem[]
+
+  @@index([customerId], map: "orders_customer_id_idx")
+  @@index([status], map: "orders_status_idx")
+  @@map("orders")
+}
+
+model OrderItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  orderId String @map("order_id") @db.Uuid
+
+  productId String? @map("product_id") @db.Uuid
+
+  productName String @map("product_name") @db.VarChar(200)
+
+  price Int
+
+  quantity Int
+
+  total Int
+
+  order Order @relation(fields: [orderId],references: [id],onDelete: Cascade)
+
+  product Product? @relation(  fields: [productId],  references: [id],  onDelete: SetNull)
+
+  @@index([orderId], map: "order_items_order_id_idx")
+  @@index([productId], map: "order_items_product_id_idx")
+  @@map("order_items")
+}

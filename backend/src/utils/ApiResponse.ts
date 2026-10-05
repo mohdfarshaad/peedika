@@ -14,14 +14,14 @@ export class ApiResponse<T> {
   static success<T>(
     data: T,
     message: string = "Success",
-    statusCode: number = 200
+    statusCode: number = 200,
   ): ApiResponse<T> {
     return new ApiResponse(statusCode, data, message);
   }
 
   static error<T>(
     message: string = "Error",
-    statusCode: number = 500
+    statusCode: number = 500,
   ): ApiResponse<null> {
     return new ApiResponse<null>(statusCode, null, message);
   }

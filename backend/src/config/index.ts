@@ -6,8 +6,7 @@ dotenv.config();
 interface EnvConfig {
   PORT: number;
   CORS_ORIGIN: string;
-  MONGO_DB_URI: string;
-  DB_NAME: string;
+  DATABASE_URL: string;
   ACCESS_TOKEN_SECRET: string;
   ACCESS_TOKEN_EXPIRY: ms.StringValue | number | undefined;
   REFRESH_TOKEN_SECRET: string;
@@ -21,8 +20,7 @@ const getConfig = (): EnvConfig => {
   const config: EnvConfig = {
     PORT: parseInt(process.env.PORT || "8000"),
     CORS_ORIGIN: process.env.CORS_ORIGIN || "",
-    MONGO_DB_URI: process.env.MONGO_DB_URI || "",
-    DB_NAME: process.env.DB_NAME || "",
+    DATABASE_URL: process.env.DATABASE_URL || "",
     ACCESS_TOKEN_SECRET: process.env.ACCESS_TOKEN_SECRET || "",
     ACCESS_TOKEN_EXPIRY: process.env.ACCESS_TOKEN_EXPIRY as StringValue,
     REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET || "",
@@ -32,10 +30,8 @@ const getConfig = (): EnvConfig => {
     CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || "",
   };
 
-  // Validate required environment variables
   const requiredEnvVars: (keyof EnvConfig)[] = [
-    "MONGO_DB_URI",
-    "DB_NAME",
+    "DATABASE_URL",
     "ACCESS_TOKEN_SECRET",
     "REFRESH_TOKEN_SECRET",
     "CLOUDINARY_CLOUD_NAME",

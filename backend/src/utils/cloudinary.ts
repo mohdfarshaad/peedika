@@ -1,18 +1,42 @@
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 
-export async function uploadOnCloudinary(uploadFilePath: string | undefined) {
+export type ResourceType = "auto" | "video" | "image" | "raw";
+
+export async function uploadOnCloudinary(
+  uploadFilePath: string | undefined,
+  resourceType: ResourceType,
+) {
+  if (!uploadFilePath) {
+    throw new Error("Local file path is required");
+  }
+
   try {
-    if (!uploadFilePath) return "Local file path is not found";
     const response = await cloudinary.uploader.upload(uploadFilePath, {
-      resource_type: "auto",
+      resource_type: resourceType,
     });
-    if (!response) {
-      return null;
-    }
-    fs.unlinkSync(uploadFilePath);
+
+    fs.unlink(uploadFilePath, (err) => {
+      if (err) {
+        console.warn(
+          `Failed to delete temp file ${uploadFilePath}:`,
+          err.message,
+        );
+      }
+    });
+
     return response;
   } catch (error) {
-    console.error("Cloudinary upload failed", error);
+    fs.unlink(uploadFilePath, (err) => {
+      if (err) {
+        console.warn(
+          `Failed to delete temp file after error ${uploadFilePath}:`,
+          err.message,
+        );
+      }
+    });
+
+    console.error("Cloudinary upload failed:", error);
+    throw error;
   }
 }

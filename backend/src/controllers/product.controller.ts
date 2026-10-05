@@ -1,109 +1,66 @@
 import { Request, Response } from "express";
-import { ProductRequest } from "../types/product";
-import { ApiError } from "../utils/ApiError";
-import { ApiResponse } from "../utils/ApiResponse";
-import { asyncHandler } from "../utils/asyncHandler";
-import { uploadOnCloudinary } from "../utils/cloudinary";
+import { ApiError } from "../utils/ApiError.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+
 import {
-  AddProduct,
-  deleteProduct,
-  fetchAllProduct,
-  fetchProduct,
-  fetchProductByCategoryName,
-  updateProduct,
-} from "../services/product.service";
-import { UploadApiResponse } from "cloudinary";
-import { Types } from "mongoose";
+  createProductService,
+  deleteProductService,
+  getAllProductsService,
+  getProductByIdService,
+  getProductsByCategoryService,
+  updateProductService,
+} from "../services/product.service.js";
 
 export const createProduct = asyncHandler(
-  async (req: ProductRequest, res: Response) => {
-    const { title, category, description, price } = req.body;
-    const file = req.file;
+  async (req: Request, res: Response) => {
+    const { name, categoryId, description, price, stock } = req.body;
 
-    if (!title && !category && !price && !file) {
-      throw ApiError.badRequest();
+    if (!name || price === undefined || stock === undefined) {
+      throw ApiError.badRequest("Name, price and stock are required");
     }
 
-    const userId = req.user?._id;
-
-    if (!userId) {
-      throw ApiError.unauthorized();
-    }
-
-    const imageLocalPath = file?.path;
-
-    const uploadImage = (await uploadOnCloudinary(
-      imageLocalPath
-    )) as UploadApiResponse;
-
-    if (!uploadImage) {
-      throw ApiError.internal("Image upload failed");
-    }
-
-    const imageUrl = uploadImage.url;
-
-    const uploadProduct = await AddProduct(
-      {
-        title,
-        category,
-        description,
-        price,
-      },
-      userId,
-      imageUrl
-    );
-
-    if (!uploadProduct) {
-      throw ApiError.internal();
-    }
-
-    res.status(200).json(new ApiResponse(201, uploadProduct, ""));
-  }
-);
-
-export const updateProductById = asyncHandler(
-  async (req: ProductRequest, res: Response) => {
-    const productId = Object(req.params.id.replace(":", ""));
-    const { title, category, description, price } = req.body;
-    const file = req.file;
-
-    if (!title && !category && !price && !file) {
-      throw ApiError.badRequest();
-    }
-
-    const imageLocalPath = file?.path;
-
-    const uploadImage = (await uploadOnCloudinary(
-      imageLocalPath
-    )) as UploadApiResponse;
-
-    if (!uploadImage) {
-      throw ApiError.internal();
-    }
-
-    const imageUrl = uploadImage.url;
-
-    const updatedProduct = await updateProduct(
-      {
-        title,
-        description,
-        category,
-        price,
-      },
-      productId,
-      imageUrl
-    );
-
-    if (!updateProduct) {
-      throw ApiError.internal();
-    }
+    const product = await createProductService({
+      name,
+      categoryId,
+      description,
+      price: Number(price),
+      stock: Number(stock),
+    });
 
     res
       .status(201)
-      .json(
-        new ApiResponse(201, updatedProduct, "Product updated successfully")
-      );
-  }
+      .json(new ApiResponse(201, product, "Product created successfully"));
+  },
+);
+
+export const updateProductById = asyncHandler(
+  async (req: Request, res: Response) => {
+    const productId = req.params.id;
+
+    if (!productId) {
+      throw ApiError.badRequest("Product ID is required");
+    }
+
+    const { name, categoryId, description, price, stock, status } = req.body;
+
+    const product = await updateProductService(String(productId), {
+      name,
+      categoryId,
+      description,
+      price: price !== undefined ? Number(price) : undefined,
+      stock: stock !== undefined ? Number(stock) : undefined,
+      status,
+    });
+
+    if (!product) {
+      throw ApiError.notFound("Product not found");
+    }
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, product, "Product updated successfully"));
+  },
 );
 
 export const deleteProductById = asyncHandler(
@@ -111,87 +68,58 @@ export const deleteProductById = asyncHandler(
     const productId = req.params.id;
 
     if (!productId) {
-      throw ApiError.accessDenied();
+      throw ApiError.badRequest("Product ID is required");
     }
 
-    const deletedProduct = await deleteProduct(productId);
-
-    if (!deleteProduct) {
-      throw ApiError.internal();
-    }
-
-    res
-      .status(200)
-      .json(
-        new ApiResponse(200, deletedProduct, "Product deleted successfully")
-      );
-  }
-);
-
-export const getProducts = asyncHandler(
-  async (req: ProductRequest, res: Response) => {
-    const userId = req.user?._id;
-
-    if (!userId) {
-      throw ApiError.unauthorized();
-    }
-
-    const products = await fetchAllProduct();
-
-    if (!products) {
-      throw ApiError.internal();
-    }
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, products, "Products fetched successfully"));
-  }
-);
-
-export const getProductById = asyncHandler(
-  async (req: ProductRequest, res: Response) => {
-    const id = req.params.id;
-    const userId = req.user?._id;
-
-    if (!userId) {
-      throw ApiError.unauthorized();
-    }
-
-    if (!id || !Types.ObjectId.isValid(id)) {
-      throw ApiError.accessDenied();
-    }
-
-    const product = await fetchProduct(new Types.ObjectId(id));
+    const product = await deleteProductService(String(productId));
 
     if (!product) {
-      throw ApiError.internal();
+      throw ApiError.notFound("Product not found");
     }
 
     res
       .status(200)
-      .json(
-        new ApiResponse(200, product, "Product by id fetched successfully")
-      );
-  }
+      .json(new ApiResponse(200, product, "Product deleted successfully"));
+  },
+);
+
+export const getProducts = asyncHandler(async (req: Request, res: Response) => {
+  const products = await getAllProductsService();
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, products, "Products fetched successfully"));
+});
+
+export const getProductById = asyncHandler(
+  async (req: Request, res: Response) => {
+    const productId = req.params.id;
+
+    if (!productId) {
+      throw ApiError.badRequest("Product ID is required");
+    }
+
+    const product = await getProductByIdService(String(productId));
+
+    if (!product) {
+      throw ApiError.notFound("Product not found");
+    }
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, product, "Product fetched successfully"));
+  },
 );
 
 export const getProductByCategory = asyncHandler(
-  async (req: ProductRequest, res: Response) => {
-    const userId = req.user?._id;
-    const category = req.params.category;
+  async (req: Request, res: Response) => {
+    const categoryId = req.params.id;
 
-    if (!userId) {
-      throw ApiError.unauthorized();
-    }
-    if (!category) {
-      throw ApiError.badRequest();
+    if (!categoryId) {
+      throw ApiError.badRequest("Category ID is required");
     }
 
-    const products = await fetchProductByCategoryName(category);
-
-    if (!products) {
-      throw ApiError.internal();
-    }
+    const products = await getProductsByCategoryService(String(categoryId));
 
     res
       .status(200)
@@ -199,8 +127,8 @@ export const getProductByCategory = asyncHandler(
         new ApiResponse(
           200,
           products,
-          "Products by category fetched successfully "
-        )
+          "Products by category fetched successfully",
+        ),
       );
-  }
+  },
 );

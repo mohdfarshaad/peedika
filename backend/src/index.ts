@@ -1,17 +1,16 @@
-import { app } from "./app";
-import { config } from "./config";
-import { connectMongoDB } from "./config/db";
+import app from "./app.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 import { v2 as cloudinary } from "cloudinary";
-
 cloudinary.config({
-  cloud_name: config.CLOUDINARY_CLOUD_NAME,
-  api_key: config.CLOUDINARY_API_KEY,
-  api_secret: config.CLOUDINARY_API_SECRET,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-connectMongoDB().then(() => {
-  app.listen(config.PORT, () => {
-    console.log("App is running on  Port : ", config.PORT);
-  });
+const PORT = process.env.PORT;
+app.listen(PORT, () => {
+  console.log(`API is running on ${PORT}`);
 });
